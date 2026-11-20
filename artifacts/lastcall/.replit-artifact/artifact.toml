@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LastCall"
+description = "Voice-powered surplus food rescue connecting Berkeley businesses with nearby food pantries, shelters, and campus clubs."
+version = "1.0.0"
+id = "artifacts/lastcall"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21928
+
+[services.development]
+run = "pnpm --filter @workspace/lastcall run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/lastcall", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/lastcall/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21928"
+BASE_PATH = "/"

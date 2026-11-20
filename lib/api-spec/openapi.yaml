@@ -1,0 +1,483 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /scan:
+    post:
+      operationId: scanFood
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PhotoInput" }
+      responses:
+        "200":
+          description: Validated food estimates or a clearly identified sample fallback
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScanResult" }
+        "400": { description: Invalid image }
+        "429": { description: Scan limit reached }
+        "422": { description: No identifiable food; choose another photo or enter items manually }
+        "502": { description: Analysis unavailable; retry or enter manually }
+        "504": { description: Analysis timed out after 15 seconds }
+  /donations/intake:
+    post:
+      operationId: intakeDonation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IntakeInput" }
+      responses:
+        "200":
+          description: Donation created or same idempotent submission returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Match" }
+        "400": { description: Invalid or unsafe donation }
+        "409": { description: Idempotency key already used for different data }
+        "429": { description: Intake rate limit reached }
+  /donations/{id}:
+    get:
+      operationId: getDonation
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 2147483647 } }
+      responses:
+        "200":
+          description: Donation history and estimated receipt
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonationDetail" }
+        "404": { description: Donation not found }
+  /donations/{id}/picked-up:
+    post:
+      operationId: markPickedUp
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 2147483647 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickupCompletionInput" }
+      responses:
+        "200":
+          description: Pickup completed or already completed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "404": { description: Donation not found }
+        "409": { description: Not confirmed or wrong recipient }
+  /recipients:
+    get:
+      operationId: getRecipients
+      responses:
+        "200":
+          description: Demo recipient policies and remaining nightly capacity
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Recipient" } }
+  /recipients/{id}/needs:
+    patch:
+      operationId: updateRecipientNeeds
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1, maximum: 2147483647 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NeedsInput" }
+      responses:
+        "200":
+          description: Current needs saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recipient" }
+        "404": { description: Recipient not found }
+  /leaderboard:
+    get:
+      operationId: getLeaderboard
+      responses:
+        "200":
+          description: Donors ranked by saved pounds since Monday midnight Pacific
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/DonorRank" } }
+  /pantry/decline:
+    post:
+      operationId: declinePantryDonation
+      summary: Decline a browser call and try the next eligible recipient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PantryDeclineInput" }
+      responses:
+        "200":
+          description: Donation rerouted or already handled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { description: Invalid donation ID }
+        "404": { description: Donation not found }
+        "409": { description: Recipient changed; refresh before declining }
+  /demo/reset:
+    post:
+      operationId: resetDemo
+      security: [{ WebhookKey: [] }]
+      responses:
+        "200":
+          description: All donations and call attempts deleted; IDs are not reused
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { description: Invalid webhook key }
+  /stats:
+    get:
+      operationId: getStats
+      responses:
+        "200":
+          description: Impact totals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+  /donations:
+    get:
+      operationId: getDonations
+      responses:
+        "200":
+          description: Donations newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Donation" }
+  /network:
+    get:
+      operationId: getNetwork
+      responses:
+        "200":
+          description: Map locations and configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Network" }
+  /businesses:
+    get:
+      operationId: getBusinesses
+      responses:
+        "200":
+          description: Monthly business impact
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Business" }
+  /demo/simulate:
+    post:
+      operationId: simulateDonation
+      responses:
+        "200":
+          description: Demo donation created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Match" }
+  /log_surplus:
+    post:
+      operationId: logSurplus
+      security: [{ WebhookKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SurplusInput" }
+      responses:
+        "200":
+          description: Matching result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Match" }
+        "401": { description: Invalid webhook key }
+  /confirm_pickup:
+    post:
+      operationId: confirmPickup
+      security: [{ WebhookKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PickupInput" }
+      responses:
+        "200":
+          description: Pickup updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        "401": { description: Invalid webhook key }
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  securitySchemes:
+    WebhookKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+  schemas:
+    PhotoInput:
+      type: object
+      required: [image]
+      properties:
+        image: { type: string, maxLength: 4500000 }
+        sample_id: { type: string, enum: [bakery, prepared] }
+    FoodItem:
+      type: object
+      additionalProperties: false
+      required: [name, quantity, unit, est_pounds]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        quantity: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        est_pounds: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+        unsafe: { type: boolean }
+    ScanResult:
+      type: object
+      required: [items, category, likely_allergens, total_est_pounds, confidence, missing_info, source]
+      properties:
+        items: { type: array, minItems: 1, maxItems: 30, items: { $ref: "#/components/schemas/FoodItem" } }
+        category: { type: string, enum: [bakery, produce, prepared, packaged, dairy] }
+        likely_allergens: { type: array, maxItems: 20, items: { type: string, maxLength: 100 } }
+        total_est_pounds: { type: number, exclusiveMinimum: 0, maximum: 100000 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        missing_info: { type: array, maxItems: 12, items: { type: string, maxLength: 400 } }
+        source: { type: string, enum: [ai, sample_fallback] }
+        fallback_reason: { type: string }
+    IntakeInput:
+      type: object
+      required: [business_id, items, category, allergens, pickup_deadline, safety_confirmed, idempotency_key]
+      properties:
+        business_id: { type: integer, minimum: 1 }
+        items: { type: array, minItems: 1, maxItems: 30, items: { $ref: "#/components/schemas/FoodItem" } }
+        category: { type: string, enum: [bakery, produce, prepared, packaged, dairy] }
+        allergens: { type: string, minLength: 1, maxLength: 500 }
+        pickup_deadline: { type: string, minLength: 1, maxLength: 200 }
+        safety_confirmed: { type: boolean, enum: [true] }
+        idempotency_key: { type: string, minLength: 16, maxLength: 100 }
+        is_sample: { type: boolean }
+    PickupCompletionInput:
+      type: object
+      properties:
+        recipient_id: { type: integer, minimum: 1 }
+    NeedsInput:
+      type: object
+      required: [current_needs]
+      properties:
+        current_needs: { type: array, maxItems: 12, items: { type: string, minLength: 1, maxLength: 80 } }
+    Recipient:
+      allOf:
+        - { $ref: "#/components/schemas/Location" }
+        - type: object
+          required: [open_from, open_until, capacity_lbs, capacity_left_lbs, current_needs, has_refrigeration]
+          properties:
+            open_from: { type: string }
+            open_until: { type: string }
+            capacity_lbs: { type: number }
+            capacity_left_lbs: { type: number }
+            current_needs: { type: array, items: { type: string } }
+            has_refrigeration: { type: boolean }
+    DonorRank:
+      type: object
+      required: [id, name, weekly_pounds, weekly_donations]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        weekly_pounds: { type: number }
+        weekly_donations: { type: integer }
+    DonationEvent:
+      type: object
+      required: [id, type, description, created_at]
+      properties:
+        id: { type: integer }
+        type: { type: string }
+        description: { type: string }
+        recipient_name: { type: ["string", "null"] }
+        created_at: { type: string }
+    Receipt:
+      type: object
+      required: [value_usd, price_per_lb, co2e_kg, meals]
+      properties:
+        value_usd: { type: number }
+        price_per_lb: { type: number }
+        co2e_kg: { type: number }
+        meals: { type: number }
+    DonationDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Donation" }
+        - type: object
+          required: [events, receipt]
+          properties:
+            events: { type: array, items: { $ref: "#/components/schemas/DonationEvent" } }
+            receipt: { $ref: "#/components/schemas/Receipt" }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+    PantryDeclineInput:
+      type: object
+      required: [donation_id]
+      properties:
+        donation_id:
+          oneOf:
+            - { type: integer, minimum: 1, maximum: 2147483647 }
+            - { type: string, pattern: '^\s*\+?\d+\s*$' }
+        recipient_id:
+          description: Recipient shown to volunteer, to reject stale or duplicate declines.
+          type: integer
+          minimum: 1
+    Stats:
+      type: object
+      required: [pounds_saved, meals, co2e_kg, donations_count]
+      properties:
+        pounds_saved: { type: number }
+        meals: { type: number }
+        co2e_kg: { type: number }
+        donations_count: { type: integer }
+    Location:
+      type: object
+      required: [id, name, address, lat, lng]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        address: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        type: { type: string }
+        accepts:
+          type: array
+          items: { type: string }
+        open_until: { type: string }
+    Business:
+      allOf:
+        - $ref: "#/components/schemas/Location"
+        - type: object
+          required: [monthly_pounds, monthly_donations]
+          properties:
+            monthly_pounds: { type: number }
+            monthly_donations: { type: integer }
+            monthly_meals: { type: number }
+            monthly_co2e_kg: { type: number }
+            streak_days: { type: integer }
+    Network:
+      type: object
+      required: [businesses, recipients, public_phone_number, calls_configured]
+      properties:
+        businesses:
+          type: array
+          items: { $ref: "#/components/schemas/Location" }
+        recipients:
+          type: array
+          items: { $ref: "#/components/schemas/Location" }
+        public_phone_number: { type: ["string", "null"] }
+        calls_configured: { type: boolean }
+        calling_mode: { type: string, enum: [browser] }
+    SurplusInput:
+      type: object
+      required: [business_name, items_description, estimated_pounds, category, pickup_deadline]
+      properties:
+        business_name: { type: string, minLength: 1, maxLength: 200 }
+        items_description: { type: string, minLength: 1, maxLength: 2000 }
+        estimated_pounds:
+          description: Positive pounds up to 100000. Numeric strings are converted to numbers before validation.
+          oneOf:
+            - { type: number, exclusiveMinimum: 0, maximum: 100000 }
+            - { type: string, pattern: '^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\s*$' }
+        category: { type: string, minLength: 1, maxLength: 100 }
+        allergens: { type: string, maxLength: 500 }
+        pickup_deadline: { type: string, minLength: 1, maxLength: 200 }
+    PickupInput:
+      type: object
+      required: [donation_id, accepted]
+      properties:
+        donation_id:
+          description: Positive integer ID. Numeric strings are converted to integers before validation.
+          oneOf:
+            - { type: integer, minimum: 1, maximum: 2147483647 }
+            - { type: string, pattern: '^\s*\+?\d+\s*$' }
+        accepted:
+          description: Boolean or the string "true" or "false".
+          oneOf:
+            - { type: boolean }
+            - { type: string, enum: ["true", "false"] }
+        pickup_eta: { type: string, maxLength: 200 }
+        notes: { type: string, maxLength: 2000 }
+    Match:
+      type: object
+      required: [donation_id, message]
+      properties:
+        donation_id: { type: integer }
+        recipient_name: { type: ["string", "null"] }
+        distance_miles: { type: ["number", "null"] }
+        message: { type: string }
+        match_reason: { type: ["string", "null"] }
+    Donation:
+      type: object
+      required: [id, business_id, business_name, business_lat, business_lng, items_description, estimated_pounds, category, status, created_at, is_demo]
+      properties:
+        id: { type: integer }
+        business_id: { type: integer }
+        business_name: { type: string }
+        business_address: { type: string }
+        business_lat: { type: number }
+        business_lng: { type: number }
+        recipient_id: { type: ["integer", "null"] }
+        recipient_name: { type: ["string", "null"] }
+        recipient_lat: { type: ["number", "null"] }
+        recipient_lng: { type: ["number", "null"] }
+        items_description: { type: string }
+        estimated_pounds: { type: number }
+        category: { type: string }
+        allergens: { type: ["string", "null"] }
+        pickup_deadline: { type: string }
+        pickup_eta: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [pending, calling, confirmed, picked_up, declined, no_match]
+        created_at: { type: string }
+        updated_at: { type: string }
+        is_demo: { type: boolean }
+        items: { type: array, items: { $ref: "#/components/schemas/FoodItem" } }
+        source: { type: string }
+        match_reason: { type: ["string", "null"] }
+        distance_miles: { type: ["number", "null"] }
+        matched_at: { type: ["string", "null"] }
+        confirmed_at: { type: ["string", "null"] }
+        picked_up_at: { type: ["string", "null"] }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+

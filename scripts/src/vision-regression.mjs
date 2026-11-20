@@ -1,0 +1,32 @@
+// Deterministic provider-failure/timeout checks. No network AI calls or database writes.
+// pnpm --filter @workspace/scripts exec tsx src/vision-regression.mjs
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { analyzeImage } from "../../artifacts/api-server/src/lib/vision.ts";
+import { resolveDeadline, openBeforeDeadline } from "../../artifacts/api-server/src/lib/food-time.ts";
+const require = createRequire(new URL("../../artifacts/api-server/package.json", import.meta.url));
+const sharp = require("sharp");
+const { DateTime } = require("luxon");
+const bytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#bd8d50" } }).jpeg().toBuffer();
+const image = `data:image/jpeg;base64,${bytes.toString("base64")}`;
+const failing = async () => { throw Error("Injected provider failure"); };
+assert.equal((await analyzeImage(image, "bakery", failing)).source, "sample_fallback");
+assert.equal((await analyzeImage(image, "prepared", failing)).category, "prepared");
+await assert.rejects(analyzeImage(image, undefined, failing), e => e.status === 502);
+await assert.rejects(analyzeImage("data:image/jpeg;base64,Zm9v", "bakery", failing), e => e.status === 400);
+let signal;
+const started = Date.now();
+const timed = await analyzeImage(image, "prepared", async (_image, s) => { signal = s; return new Promise(() => {}); });
+assert.equal(timed.source, "sample_fallback");
+assert.equal(timed.fallback_reason, "scan_timeout");
+assert.ok(Date.now() - started >= 14900 && Date.now() - started < 16500);
+assert.equal(signal.aborted, true);
+await assert.rejects(analyzeImage(image, undefined, () => new Promise(() => {}), 20), e => e.status === 504);
+const now = DateTime.fromISO("2026-11-20T19:30:00", { zone: "America/Los_Angeles" });
+assert.equal(resolveDeadline("By 8pm", now).toISOString(), "2026-11-21T04:00:00.000Z");
+assert.throws(() => resolveDeadline("By 7pm", now), /future time/);
+assert.throws(() => resolveDeadline("In 25 hours", now), /24 hours/);
+assert.equal(resolveDeadline("Within 45 minutes", now).getTime() - now.toMillis(), 45 * 60000);
+assert.equal(openBeforeDeadline({ open_from: "18:00", open_until: "08:00" }, resolveDeadline("In 30 min", now), 10, now), true);
+assert.equal(openBeforeDeadline({ open_from: "08:00", open_until: "19:00" }, resolveDeadline("In 30 min", now), 10, now), false);
+console.log("PASS: sample error/15-second timeout fallback, cancellation, real-photo failures, malformed-image rejection and Pacific deadline/overnight-hours checks.");
